@@ -107,7 +107,7 @@ func DeleteRecipeHandler(c *gin.Context) {
 		return
 	}
 
-	// slices.Delete()
+	//recipes = append(recipes[:index], recipes[index+1:]...)
 
 	recipes = slices.Delete(recipes, index, index+1)
 
