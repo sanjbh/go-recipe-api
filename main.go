@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"slices"
@@ -27,6 +28,7 @@ func main() {
 	router.GET("/recipes", ListRecipesHandler)
 	router.PUT("/recipes/:id", UpdateRecipeHandler)
 	router.DELETE("/recipes/:id", DeleteRecipeHandler)
+	router.GET("/recipes/search", SearchRecipesHandler)
 	router.Run()
 }
 
@@ -114,4 +116,28 @@ func DeleteRecipeHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Recipe has been deleted",
 	})
+}
+
+func SearchRecipesHandler(c *gin.Context) {
+	tag := c.Query("tag")
+	matchedRecipes := make([]Recipe, 0)
+
+	found := false
+
+	for _, r := range recipes {
+
+		for _, t := range r.Tags {
+			if strings.EqualFold(t, tag) {
+				found = true
+				matchedRecipes = append(matchedRecipes, r)
+			}
+		}
+	}
+
+	if found {
+		c.JSON(http.StatusOK, &matchedRecipes)
+	} else {
+		c.JSON(http.StatusNotFound, "Recipe not found")
+		return
+	}
 }
