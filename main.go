@@ -6,6 +6,8 @@ import (
 	"os"
 	"time"
 
+	"slices"
+
 	"github.com/gin-gonic/gin"
 	"github.com/rs/xid"
 )
@@ -24,6 +26,7 @@ func main() {
 	router.POST("/recipes", NewRecipeHandler)
 	router.GET("/recipes", ListRecipesHandler)
 	router.PUT("/recipes/:id", UpdateRecipeHandler)
+	router.DELETE("/recipes/:id", DeleteRecipeHandler)
 	router.Run()
 }
 
@@ -84,4 +87,31 @@ func UpdateRecipeHandler(c *gin.Context) {
 
 	recipes[index] = recipe
 	c.JSON(http.StatusOK, recipe)
+}
+
+func DeleteRecipeHandler(c *gin.Context) {
+	id := c.Param("id")
+	index := -1
+
+	for i, r := range recipes {
+		if r.ID == id {
+			index = i
+			break
+		}
+	}
+
+	if index == -1 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Recipe not found",
+		})
+		return
+	}
+
+	// slices.Delete()
+
+	recipes = slices.Delete(recipes, index, index+1)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Recipe has been deleted",
+	})
 }
