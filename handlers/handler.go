@@ -2,25 +2,30 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
+	"log"
 	"net/http"
 	"recipe-api/models"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type RecipesHandler struct {
-	collection *mongo.Collection
-	ctx        context.Context
+	collection  *mongo.Collection
+	ctx         context.Context
+	redisClient *redis.Client
 }
 
-func NewRecipesHandler(ctx context.Context, collection *mongo.Collection) *RecipesHandler {
+func NewRecipesHandler(ctx context.Context, collection *mongo.Collection, redisClient *redis.Client) *RecipesHandler {
 	return &RecipesHandler{
 		collection,
 		ctx,
+		redisClient,
 	}
 }
 
@@ -34,18 +39,33 @@ func NewRecipesHandler(ctx context.Context, collection *mongo.Collection) *Recip
 //	'200':
 //	    description: Successful operation
 func (handler *RecipesHandler) ListRecipesHandler(c *gin.Context) {
-	cur, err := handler.collection.Find(handler.ctx, bson.M{})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	defer cur.Close(handler.ctx)
 
 	recipes := make([]models.Recipe, 0)
+	val, err := handler.redisClient.Get(handler.ctx, "recipes").Result()
+	log.Printf("Err value from redis query: %v\n", err)
 
-	if err = cur.All(handler.ctx, &recipes); err != nil {
+	if err == redis.Nil {
+		log.Println("Data not found in cache. Quering mongodb instance")
+		cur, err := handler.collection.Find(handler.ctx, bson.M{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		defer cur.Close(handler.ctx)
+
+		if err = cur.All(handler.ctx, &recipes); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		data, _ := json.Marshal(&recipes)
+		res := handler.redisClient.Set(handler.ctx, "recipes", string(data), 0)
+		log.Printf("Result of redis write: %v\n", res.String())
+	} else if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	} else {
+		log.Println("Request to redis")
+		json.Unmarshal([]byte(val), &recipes)
 	}
 
 	c.JSON(http.StatusOK, &recipes)
@@ -98,6 +118,10 @@ func (handler *RecipesHandler) UpdateRecipeHandler(context *gin.Context) {
 		context.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	log.Println("Record has been updated. Removing data from redis")
+
+	handler.redisClient.Del(handler.ctx, "recipes")
 
 	context.JSON(http.StatusOK, gin.H{
 		"message": "Recipe has been updated",
@@ -206,6 +230,9 @@ func (handler *RecipesHandler) NewRecipeHandler(context *gin.Context) {
 		context.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	log.Println("New record has been inserted. Removing data from redis")
+	handler.redisClient.Del(handler.ctx, "recipes")
 
 	context.JSON(http.StatusOK, &recipe)
 
